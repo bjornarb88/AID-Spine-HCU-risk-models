@@ -1,0 +1,151 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import joblib\n",
+    "import os\n",
+    "import numpy as np\n",
+    "from sklearn.metrics import roc_auc_score\n",
+    "import glob\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# --- Paths ---\n",
+    "model_path = \"savedmodels/xgboost_pipeline.joblib\"\n",
+    "external_data_path = \"data/mi_data\"\n",
+    "output_path = \"data/results\"\n",
+    "pred_path = \"data/pred_values\"\n",
+    "os.makedirs(output_path, exist_ok=True)\n",
+    "os.makedirs(pred_path, exist_ok=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# --- Load the saved pipeline ---\n",
+    "pipeline = joblib.load(model_path)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Calibration function\n",
+    "def calculate_calibration(y_true, y_pred):\n",
+    "    slope = np.polyfit(y_pred, y_true, 1)[0]\n",
+    "    citl = np.mean(y_true) - np.mean(y_pred)\n",
+    "    return slope, citl\n",
+    "\n",
+    "# Storage for all metrics\n",
+    "all_metrics = []\n",
+    "\n",
+    "# --- Loop over MI datasets ---\n",
+    "for i in range(1, 21):\n",
+    "    file_path = os.path.join(external_data_path, f\"tromsø7_mi{i}.csv\")\n",
+    "    dataset = pd.read_csv(file_path)\n",
+    "\n",
+    "    # Metadata for saving\n",
+    "    ids = dataset[\"lopenr\"]\n",
+    "    y_true = dataset[\"high_cost_point\"]\n",
+    "\n",
+    "    # Prepare predictors\n",
+    "    X = dataset.drop(columns=[\"lopenr\", \"high_cost_point\", \"persistent\"])\n",
+    "\n",
+    "    # Predict probabilities\n",
+    "    y_pred_proba = pipeline.predict_proba(X)[:, 1]\n",
+    "\n",
+    "    # Save predictions\n",
+    "    out_df = pd.DataFrame({\n",
+    "        \"ID\": ids,\n",
+    "        \"True\": y_true,\n",
+    "        \"Proba\": y_pred_proba,\n",
+    "    })\n",
+    "    out_df.to_csv(os.path.join(pred_path, f\"pred_values_mi{i}.csv\"), index=False)\n",
+    "\n",
+    "    # Calculate metrics\n",
+    "    auc = roc_auc_score(y_true, y_pred_proba)\n",
+    "    slope, citl = calculate_calibration(y_true, y_pred_proba)\n",
+    "\n",
+    "    all_metrics.append({\n",
+    "        \"Imputation\": i,\n",
+    "        \"AUC\": auc,\n",
+    "        \"Calibration Slope\": slope,\n",
+    "        \"CITL\": citl\n",
+    "    })\n",
+    "\n",
+    "    print(f\"✅ Finished binary predictions for MI {i}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Convert to DataFrame\n",
+    "metrics_df = pd.DataFrame(all_metrics)\n",
+    "\n",
+    "# Compute average\n",
+    "avg_metrics = metrics_df.mean(numeric_only=True).to_frame().T\n",
+    "avg_metrics[\"Imputation\"] = \"Overall Average\"\n",
+    "\n",
+    "# Save\n",
+    "avg_metrics.to_csv(os.path.join(output_path, \"xgboost_external_metrics_binary_mean.csv\"), index=False)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "results_file = \"data/results/xgboost_external_metrics_binary_mean.csv\"\n",
+    "results_df = pd.read_csv(results_file)\n",
+    "results_df\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3.11",
+   "language": "python",
+   "name": "python311"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.11.1"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
